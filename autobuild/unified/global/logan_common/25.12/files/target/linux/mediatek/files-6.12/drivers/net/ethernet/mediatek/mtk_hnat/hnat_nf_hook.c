@@ -3479,6 +3479,7 @@ int mtk_sw_nat_hook_rx(struct sk_buff *skb)
 	skb_hnat_filled(skb) = 0;
 	skb_hnat_set_tops(skb, 0);
 	skb_hnat_set_cdrt(skb, 0);
+	skb_hnat_set_is_pppoe(skb, 0);
 	skb_hnat_set_is_decrypt(skb, 0);
 	skb_hnat_magic_tag(skb) = HNAT_MAGIC_TAG;
 
