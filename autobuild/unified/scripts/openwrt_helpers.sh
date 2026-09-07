@@ -244,6 +244,7 @@ __openwrt_feed_line_compose() {
 # $3:	URL (Optional with Branch/Revision)
 # $4:	(Optional) Flags
 openwrt_feeds_add() {
+	local feed_name="${1}"
 	local new_line=
 	local farr=()
 
@@ -260,7 +261,7 @@ openwrt_feeds_add() {
 
 	new_line=$(__openwrt_feed_line_compose farr)
 
-	openwrt_feeds_remove "${1}"
+	openwrt_feeds_remove "${feed_name}"
 
 	echo "${new_line}" >> "${openwrt_root}/feeds.conf.default"
 }
@@ -428,7 +429,11 @@ openwrt_feeds_set_revision() {
 
 # Get existed git-based feeds
 openwrt_avail_feeds() {
-	local feeds=$(cd ${openwrt_root}/feeds && find -maxdepth 1 -type d -exec test -d '{}'/.git \; -printf '%f\n')
+	local feeds=
+
+	feeds=$(cd "${openwrt_root}/feeds" && \
+		find -L -maxdepth 1 -type d \
+			-exec test -d '{}'/.git \; -printf '%f\n')
 
 	echo $feeds
 }
