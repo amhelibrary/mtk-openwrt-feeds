@@ -15,6 +15,18 @@ do_cmd() {
     echo ""
 }
 
+# cat a mt76 debugfs file of every phy: cat_each_phy <relative path under phyX>
+cat_each_phy() {
+    local f first=1
+    for f in /sys/kernel/debug/ieee80211/phy*/$1; do
+        [ -f "$f" ] || continue
+        # sleep 1s between files (not before the first one)
+        [ "$first" = "1" ] || sleep 1
+        first=0
+        do_cmd "cat $f"
+    done
+}
+
 # ---- get_uboot_env_emmc ---------------------------------------------------
 # Corresponds to `uci show ubootenv`: extract dev offset envsize secsize
 # numsec and join them into a config string in order.
@@ -157,8 +169,8 @@ dump_board_info() {
 
     do_cmd "uname -a"
     do_cmd "lspci"
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/fw_version"
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/eeprom_mode"
+    cat_each_phy mt76/fw_version
+    cat_each_phy mt76/eeprom_mode
     do_cmd "cat /etc/config/wireless"
     do_cmd "cat /etc/config/network"
     do_cmd "iw dev"
@@ -166,8 +178,11 @@ dump_board_info() {
 }
 
 dump_link_sta_info() {
-    local phy="/sys/kernel/debug/ieee80211/phy0"
+    local phy
 
+    for phy in /sys/kernel/debug/ieee80211/phy*; do
+    [ -d "$phy" ] || continue
+    echo "=== $(basename "$phy") ==="
     ls $phy | grep netdev | awk -F ':' '{print $2}'| while read iface; do
         local base="${phy}/netdev:${iface}"
         [ -d "$base" ] || { echo "[skip] ${base} not found"; continue; }
@@ -196,19 +211,22 @@ dump_link_sta_info() {
             done
         done
     done
+    done
 }
 
 dump_mt76_links_info() {
-    local phy="/sys/kernel/debug/ieee80211/phy0"
+    local phy f rel
 
-    [ -d "$phy" ] || { echo "[error] $phy not found"; return; }
+    for phy in /sys/kernel/debug/ieee80211/phy*; do
+        [ -d "$phy" ] || continue
 
-    for f in "$phy"/*/mt76_links_info; do
-        [ -f "$f" ] || continue
-        local rel="${f#$phy/}"
-        echo "$rel"
-        do_cmd "cat '$f'"
-        echo ""
+        for f in "$phy"/*/mt76_links_info; do
+            [ -f "$f" ] || continue
+            rel="${f#/sys/kernel/debug/ieee80211/}"
+            echo "$rel"
+            do_cmd "cat '$f'"
+            echo ""
+        done
     done
 }
 
@@ -231,7 +249,8 @@ dump_connection_info() {
 }
 
 dump_per_vif_sta_info() {
-    for i in /sys/kernel/debug/ieee80211/phy0/*/stations/; do
+    for i in /sys/kernel/debug/ieee80211/phy*/*/stations/; do
+        [ -d "$i" ] || continue
         iface=${i#*netdev:}
         iface=${iface%%/*}
         echo
@@ -242,60 +261,81 @@ dump_per_vif_sta_info() {
 }
 
 dump_fw_timestamp() {
-    echo 0x820eb37c > /sys/kernel/debug/ieee80211/phy0/mt76/regidx
-    val=$(($(cat /sys/kernel/debug/ieee80211/phy0/mt76/regval)))
-    echo "${val%??????}.${val#${val%??????}} (1~2s tolerance)"
+    local phy val
+    for phy in /sys/kernel/debug/ieee80211/phy*/mt76; do
+        [ -f "$phy/regidx" ] || continue
+        echo 0x820eb37c > $phy/regidx
+        val=$(($(cat $phy/regval)))
+        echo "${phy%/mt76}: ${val%??????}.${val#${val%??????}} (1~2s tolerance)"
+    done
 }
 
 dump_token_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/token"
+    cat_each_phy mt76/token
 }
 
 dump_ple_info() {
-    echo $command_timeout > /sys/kernel/debug/ieee80211/phy0/mt76/ple_query_cr
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/ple_info"
+    local f
+    for f in /sys/kernel/debug/ieee80211/phy*/mt76/ple_info; do
+        [ -f "$f" ] || continue
+        [ -f "${f%ple_info}ple_query_cr" ] &&
+            echo $command_timeout > "${f%ple_info}ple_query_cr"
+        do_cmd "cat $f"
+    done
 }
 
 dump_pse_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/pse_info"
+    cat_each_phy mt76/pse_info
 }
 
 dump_mib_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/*/mibinfo"
+    cat_each_phy "mt76/mib_info*"
+    cat_each_phy "mt76/*/mibinfo"
 }
 
 dump_drop_stats() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/tx_drop_stats"
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/rx_drop_stats"
+    cat_each_phy mt76/tx_drop_stats
+    cat_each_phy mt76/rx_drop_stats
 }
 
 dump_tr_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/tr_info"
+    cat_each_phy mt76/tr_info
 }
 
 dump_twt_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/twt_stats"
+    cat_each_phy mt76/twt_stats
 }
 
 dump_ser_status() {
-    local phy="/sys/kernel/debug/ieee80211/phy0"
+    local phy f
 
-    if [ "$command_timeout" = "0" ]
-    then
-        do_cmd "echo 0 > $phy/mt76/band0/sys_recovery" # FW
-        sleep 1
-        dmesg | tail -n 200 | grep 'ieee80211 phy0: WM'
-    fi
-    do_cmd "cat $phy/mt76/band0/sys_recovery" # Driver
+    for phy in /sys/kernel/debug/ieee80211/phy*; do
+        # sys_recovery is either under mt76/band0/ or directly under mt76/
+        f="$phy/mt76/band0/sys_recovery"
+        [ -f "$f" ] || f="$phy/mt76/sys_recovery"
+        [ -f "$f" ] || continue
+        if [ "$command_timeout" = "0" ]
+        then
+            do_cmd "echo 0 > $f" # FW
+            sleep 1
+            dmesg | tail -n 200 | grep "ieee80211 $(basename $phy): WM"
+        fi
+        do_cmd "cat $f" # Driver
+    done
 }
 
 dump_sta_info() {
-    echo $command_timeout > /sys/kernel/debug/ieee80211/phy0/mt76/wtbl_query_cr
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/sta_info"
+    local f
+    for f in /sys/kernel/debug/ieee80211/phy*/mt76/sta_info; do
+        [ -f "$f" ] || continue
+        [ -f "${f%sta_info}wtbl_query_cr" ] &&
+            echo $command_timeout > "${f%sta_info}wtbl_query_cr"
+        do_cmd "cat $f"
+    done
 }
 
 dump_wm_info() {
-    do_cmd "cat /sys/kernel/debug/ieee80211/phy0/mt76/fw_wm_info"
+    cat_each_phy mt76/fw_wm_info
 }
 
 dump_wed_rxinfo() {
