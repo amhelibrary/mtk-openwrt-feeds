@@ -1,0 +1,23 @@
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
+@@ -332,6 +332,9 @@ static const char * const mtk_clks_sourc
+ 	"top_netsys_warp_sel",
+ };
+ 
++void (*mtk_crypto_set_dec_secpath)(struct sk_buff *skb, u16 cdrt) = NULL;
++EXPORT_SYMBOL(mtk_crypto_set_dec_secpath);
++
+ void mtk_w32(struct mtk_eth *eth, u32 val, unsigned reg)
+ {
+ 	__raw_writel(val, eth->base + reg);
+--- a/drivers/net/ethernet/mediatek/mtk_eth_soc.h
++++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.h
+@@ -2030,6 +2030,8 @@ static inline bool mtk_interface_mode_is
+ 	}
+ }
+ 
++extern void (*mtk_crypto_set_dec_secpath)(struct sk_buff* skb, u16 cdrt);
++
+ /* read the hardware status register */
+ void mtk_stats_update_mac(struct mtk_mac *mac);
+ 
